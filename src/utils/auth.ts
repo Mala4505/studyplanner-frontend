@@ -25,10 +25,13 @@ export function login(trNumber: string, password: string): User | null {
 export function logout(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
-export function getCurrentUser(): User | null {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  return stored ? JSON.parse(stored) : null;
+export function getCurrentUser() {
+  const token = localStorage.getItem('token');
+  const role = localStorage.getItem('role');
+  if (!token || !role) return null;
+  return { token, role };
 }
-export function isAdmin(user: User | null): boolean {
-  return user?.role === 'admin';
+
+export function isAdmin(user) {
+  return user.role === 'admin';
 }
