@@ -107,20 +107,35 @@ function DraggableBook({ book }: { book: Book }) {
   });
 
   return (
+    // <div
+    //   ref={setNodeRef}
+    //   {...listeners}
+    //   {...attributes}
+    //   className="bg-gray-800 rounded-lg p-3 cursor-move select-none hover:bg-gray-700 transition-colors"
+    // >
+    //   <BookBlock book={book} isDraggable={true} />
+    //   <div className="mt-2 text-xs text-gray-400">
+    //     <div>
+    //       Pages: {book.pageFrom} - {book.pageTo} ({book.totalPages} pages)
+    //     </div>
+    //     <div>Duration: {book.duration} days</div>
+    //   </div>
+    // </div>
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className="bg-gray-800 rounded-lg p-3 cursor-move hover:bg-gray-700 transition-colors"
+      className="bg-gray-800 rounded-lg p-3 cursor-move select-none hover:bg-gray-700 transition-colors z-50"
     >
-      <BookBlock book={book} isDraggable={true} />
-      <div className="mt-2 text-xs text-gray-400">
-        <div>
-          Pages: {book.pageFrom} - {book.pageTo} ({book.totalPages} pages)
+      <div className="pointer-events-none">
+        <BookBlock book={book} isDraggable={true} />
+        <div className="mt-2 text-xs text-gray-400">
+          <div>Pages: {book.pageFrom} - {book.pageTo} ({book.totalPages} pages)</div>
+          <div>Duration: {book.duration} days</div>
         </div>
-        <div>Duration: {book.duration} days</div>
       </div>
     </div>
+
   );
 }
 
