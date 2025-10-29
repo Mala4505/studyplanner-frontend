@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { DndContext, DragEndEvent, closestCenter, DragOverlay } from '@dnd-kit/core';
 // import { DndKitDevTools } from '@dnd-kit/devtools';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { Navbar } from '../components/Navbar';
 import { BookSidebar } from '../components/BookSidebar';
 import { Calendar } from '../components/Calendar';
-import { getBooks, getSchedule, scheduleBook } from '../api/schedule';
+import { getBooks, getSchedule, scheduleBook, updateBlock } from '../api/schedule';
 import { getMonthCalendar } from '../utils/hijriCalendar';
 import { Book, CalendarDay, StudySession } from '../types';
 import jsPDF from 'jspdf';
@@ -30,6 +31,14 @@ export function Schedule() {
         .filter(Boolean)
     )
   );
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+    }
+  }, []);
 
 
   useEffect(() => {
@@ -93,39 +102,83 @@ export function Schedule() {
     if (!over || active.id === over.id) return;
 
     const bookData = active.data.current?.book as Book;
+    const sessionData = active.data.current?.session as StudySession;
     const targetDate = over.data.current?.date as string;
-    console.log('Dragged:', active.data.current?.book);
-    console.log('Dropped on:', over?.data.current?.date);
 
+    console.log('Dragged:', bookData || sessionData);
+    console.log('Dropped on:', targetDate);
 
-    if (bookData && targetDate) {
-      try {
-        console.log('Sending POST request with:', {
-          bookId: bookData.id,
-          date: targetDate
-        });
+    try {
+      if (bookData && !sessionData && targetDate) {
+        // 🟢 Dragged from sidebar — schedule new blocks
+        console.log('Scheduling new book:', { bookId: bookData.id, date: targetDate });
         await scheduleBook(bookData.id, targetDate);
-        const updated = await getSchedule();
-        // console.log('Updated schedule:', updated);
-        const blocks = updated.map(block => ({
-          id: `session-${block.id}`,
-          bookId: block.book,
-          bookTitle: block.book_title || 'Untitled',
-          date: block.date_gregorian,
-          hijriDate: block.date_hijri,
-          pageRange: {
-            start: block.page_start,
-            end: block.page_end
-          },
-          color: '#FF6B6B'
-        }));
-      console.log('Updated schedule:', blocks);
-        setStudySessions(blocks);
-      } catch (err) {
-        console.error('Failed to schedule book:', err);
+      } else if (sessionData && targetDate) {
+        // 🟡 Dragged an existing block — update its date
+        const blockId = sessionData.id.replace('session-', '');
+        console.log('Updating existing block:', { blockId, newDate: targetDate });
+        await updateBlock(blockId, targetDate);
       }
+
+      // 🔄 Refresh schedule after either action
+      const updated = await getSchedule();
+      const blocks = updated.map(block => ({
+        id: `session-${block.id}`,
+        bookId: block.book,
+        bookTitle: block.book_title || 'Untitled',
+        date: block.date_gregorian,
+        hijriDate: block.date_hijri,
+        pageRange: {
+          start: block.page_start,
+          end: block.page_end
+        },
+        color: '#FF6B6B'
+      }));
+      console.log('Updated schedule:', blocks);
+      setStudySessions(blocks);
+    } catch (err) {
+      console.error('Failed to handle drag end:', err);
     }
   };
+
+  // const handleDragEnd = async (event: DragEndEvent) => {
+  //   const { active, over } = event;
+  //   if (!over || active.id === over.id) return;
+
+  //   const bookData = active.data.current?.book as Book;
+  //   const targetDate = over.data.current?.date as string;
+  //   console.log('Dragged:', active.data.current?.book);
+  //   console.log('Dropped on:', over?.data.current?.date);
+
+
+  //   if (bookData && targetDate) {
+  //     try {
+  //       console.log('Sending POST request with:', {
+  //         bookId: bookData.id,
+  //         date: targetDate
+  //       });
+  //       await scheduleBook(bookData.id, targetDate);
+  //       const updated = await getSchedule();
+  //       // console.log('Updated schedule:', updated);
+  //       const blocks = updated.map(block => ({
+  //         id: `session-${block.id}`,
+  //         bookId: block.book,
+  //         bookTitle: block.book_title || 'Untitled',
+  //         date: block.date_gregorian,
+  //         hijriDate: block.date_hijri,
+  //         pageRange: {
+  //           start: block.page_start,
+  //           end: block.page_end
+  //         },
+  //         color: '#FF6B6B'
+  //       }));
+  //     console.log('Updated schedule:', blocks);
+  //       setStudySessions(blocks);
+  //     } catch (err) {
+  //       console.error('Failed to schedule book:', err);
+  //     }
+  //   }
+  // };
 
   const handlePrevMonth = () => {
     setCurrentMonth(prev =>
@@ -177,7 +230,7 @@ export function Schedule() {
             handleDragEnd(event);
           }}
 
-          // onDragEnd={handleDragEnd}
+        // onDragEnd={handleDragEnd}
         >
           <BookSidebar books={books} onAddBook={handleAddBook} />
           {/* <DndKitDevTools /> */}

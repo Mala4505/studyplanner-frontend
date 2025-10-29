@@ -9,27 +9,17 @@ interface StudyBlockProps {
 }
 
 export function StudyBlock({ session }: StudyBlockProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    isDragging
-  } = useDraggable({
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: session.id,
-    data: {
-      book: {
-        id: session.bookId,
-        title: session.bookTitle,
-        color: session.color
-      }
-    }
+    data: { session }
   });
 
+
   const style = {
-    transform: CSS.Translate.toString(transform),
+    transform: transform ? CSS.Translate.toString(transform) : undefined,
     opacity: isDragging ? 0.5 : 1
   };
+
 
   return (
     <div

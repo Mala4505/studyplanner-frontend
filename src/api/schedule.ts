@@ -35,9 +35,8 @@ export async function scheduleBook(bookId: string, date: string) {
   });
 }
 
-
 export async function updateBlock(id: string, newDate: string): Promise<void> {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem('token'); // or use session-based auth
   const res = await fetch(`http://localhost:8000/schedule/block/${id}/`, {
     method: 'PATCH',
     headers: {
@@ -47,4 +46,21 @@ export async function updateBlock(id: string, newDate: string): Promise<void> {
     body: JSON.stringify({ date_gregorian: newDate }),
   });
   if (!res.ok) throw new Error('Failed to update block');
+}
+
+
+export async function rescheduleBlock(blockId: string, newDate: string) {
+  return fetch('/schedule/reschedule/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      block_id: blockId,
+      new_date: newDate
+    })
+  }).then(res => {
+    if (!res.ok) throw new Error('Failed to reschedule');
+    return res.json();
+  });
 }
