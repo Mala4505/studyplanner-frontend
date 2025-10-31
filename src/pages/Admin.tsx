@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Navbar } from '../components/Navbar';
 import { Trash2 } from 'lucide-react';
 import { getUsers, createUser, deleteUser } from '../api/users';
+import { useNavigate } from 'react-router-dom';
+
 
 interface User {
   tr_number: string;
@@ -12,6 +14,17 @@ export function Admin() {
   const [users, setUsers] = useState<User[]>([]);
   const [newTrNumber, setNewTrNumber] = useState('');
   const [newRole, setNewRole] = useState<'student' | 'admin'>('student');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const role = localStorage.getItem('role');
+
+    if (!token || role !== 'admin') {
+      navigate('/schedule', { replace: true }); // ✅ Redirect non-admins
+    }
+  }, [navigate]);
+
 
   useEffect(() => {
     getUsers().then(setUsers).catch(err => {
@@ -102,9 +115,8 @@ export function Admin() {
                     <td className="px-6 py-4 text-white">{user.tr_number}</td>
                     <td className="px-6 py-4">
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          user.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'
-                        }`}
+                        className={`px-3 py-1 rounded-full text-xs font-medium ${user.role === 'admin' ? 'bg-purple-600 text-white' : 'bg-blue-600 text-white'
+                          }`}
                       >
                         {user.role}
                       </span>

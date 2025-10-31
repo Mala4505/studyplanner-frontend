@@ -1,37 +1,40 @@
 import { User } from '../types';
-const STORAGE_KEY = 'studyplanner_user';
-// Demo users
-const DEMO_USERS: User[] = [{
-  trNumber: 'TR001',
-  password: 'student123',
-  role: 'student'
-}, {
-  trNumber: 'TR002',
-  password: 'student123',
-  role: 'student'
-}, {
-  trNumber: 'ADMIN',
-  password: 'admin123',
-  role: 'admin'
-}];
-export function login(trNumber: string, password: string): User | null {
-  const user = DEMO_USERS.find(u => u.trNumber === trNumber && u.password === password);
-  if (user) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-    return user;
+
+const TOKEN_KEY = 'token';
+
+interface JwtPayload {
+  username: string;
+  role: string;
+  exp: number;
+  [key: string]: any;
+}
+
+// ✅ Decode JWT payload
+function decodeToken(token: string): JwtPayload | null {
+  try {
+    const base64 = token.split('.')[1];
+    const decoded = JSON.parse(atob(base64));
+    return decoded;
+  } catch {
+    return null;
   }
-  return null;
 }
 export function logout(): void {
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(TOKEN_KEY);
 }
-export function getCurrentUser() {
+export function getCurrentUser(): User | null {
   const token = localStorage.getItem('token');
   const role = localStorage.getItem('role');
   if (!token || !role) return null;
-  return { token, role };
+
+  // You can decode token for username if needed
+  const payload = JSON.parse(atob(token.split('.')[1]));
+  return {
+    trNumber: payload.tr_number,
+    role: role as 'student' | 'admin'
+  };
 }
 
-export function isAdmin(user) {
+export function isAdmin(user: User): boolean {
   return user.role === 'admin';
 }

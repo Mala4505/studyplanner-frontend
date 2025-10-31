@@ -1,11 +1,58 @@
+export interface User {
+  trNumber: string;
+  // password: string;
+  role: 'student' | 'admin';
+}
 export interface Book {
   id: string;
   title: string;
-  totalPages: number;
+  pageFrom: number;
+  pageTo: number;
   duration: number;
+  totalPages: number;
   startDate: Date;
   color: string;
 }
+// export interface ScheduledBlock {
+//   id: string;
+//   book: string;
+//   date: string; // YYYY-MM-DD format
+//   pageFrom: number;
+//   pageTo: number;
+//   dayNumber: number; // Which day of the duration (1-based)
+// }
+export interface ScheduledBlock {
+  id: string;
+  book: number; // ✅ should be a number (book ID), not string
+  book_title: string; // ✅ needed for display
+  date_gregorian: string; // ✅ matches backend field
+  date_hijri?: string;
+  day_of_week?: string;
+  page_start: number;
+  page_end: number;
+}
+
+export interface HijriDate {
+  year: number;
+  month: number;
+  day: number;
+  monthName: string;
+}
+export interface CalendarDay {
+  gregorianDate: Date;
+  hijriDate: HijriDate;
+  dayName: string;
+  isCurrentMonth: boolean;
+  isPast: boolean;
+}
+// export interface Book {
+//   id: string;
+//   title: string;
+//   totalPages: number;
+//   duration: number;
+//   startDate: Date;
+//   color: string;
+// }
 
 export interface StudySession {
   id: string;
@@ -19,3 +66,9 @@ export interface StudySession {
   hijriDate: string;
   color: string;
 }
+
+// export type CalendarDay = {
+//   date: string;
+//   hijriDate?: string;
+//   blocks: ScheduledBlock[];
+// };

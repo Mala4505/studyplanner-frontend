@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DndContext, DragEndEvent, closestCenter, DragOverlay } from '@dnd-kit/core';
 // import { DndKitDevTools } from '@dnd-kit/devtools';
@@ -8,12 +8,22 @@ import { BookSidebar } from '../components/BookSidebar';
 import { Calendar } from '../components/Calendar';
 import { getBooks, getSchedule, scheduleBook, updateBlock } from '../api/schedule';
 import { getMonthCalendar } from '../utils/hijriCalendar';
-import { Book, CalendarDay, StudySession } from '../types';
+import { Book, CalendarDay, StudySession, ScheduledBlock } from '../types';
+import { getCurrentUser } from '../utils/auth';
 import jsPDF from 'jspdf';
 import { toCanvas } from 'html-to-image';
 import { format } from 'date-fns';
+import { toast } from 'react-toastify';
 
 export function Schedule() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login', { replace: true });
+    }
+  }, []);
   const [books, setBooks] = useState<Book[]>([]);
   const [studySessions, setStudySessions] = useState<StudySession[]>([]);
   const [currentMonth, setCurrentMonth] = useState(() => {
@@ -31,21 +41,25 @@ export function Schedule() {
         .filter(Boolean)
     )
   );
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-    }
-  }, []);
 
 
   useEffect(() => {
     getBooks().then(setBooks).catch(err => console.error('Failed to fetch books:', err));
+
     getSchedule()
       .then(res => {
-        const blocks = res.data.map(block => ({
+        // ✅ Assign colors per book
+        const colorMap: Record<number, string> = {};
+        let colorIndex = 0;
+
+        res.forEach((block: ScheduledBlock) => {
+          if (!colorMap[block.book]) {
+            colorMap[block.book] = bookColors[colorIndex % bookColors.length];
+            colorIndex++;
+          }
+        });
+
+        const blocks = res.map(block => ({
           id: `session-${block.id}`,
           bookId: block.book,
           bookTitle: block.book_title || 'Untitled',
@@ -55,17 +69,43 @@ export function Schedule() {
             start: block.page_start,
             end: block.page_end
           },
-          color: '#FF6B6B'
+          color: colorMap[block.book] // ✅ Now this works on refresh
         }));
+
         setStudySessions(blocks);
       })
       .catch(err => console.error('Failed to fetch schedule:', err));
   }, []);
 
+
   useEffect(() => {
     const days = getMonthCalendar(currentMonth.year, currentMonth.month);
     setCalendarDays(days);
   }, [currentMonth]);
+
+  const user = getCurrentUser();
+
+  const handleClearMySchedule = async () => {
+
+    if (!confirm('This will remove all your scheduled blocks. Continue?')) return;
+
+    try {
+      const res = await fetch('http://localhost:8000/schedule/clear/', {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        }
+      });
+
+      const data = await res.json();
+      setStudySessions([]); // or call fetchStudySessions()
+      toast.success(data.message || 'Your schedule has been cleared');
+    } catch (err) {
+      console.error('Failed to clear schedule:', err);
+      toast.error('Error clearing your schedule');
+    }
+  };
 
   const handleAddBook = (book: Book) => {
     setBooks(prev => [...prev, book]);
@@ -74,8 +114,10 @@ export function Schedule() {
   };
 
   const generateStudySessions = (book: Book): StudySession[] => {
+    const color = book.color || bookColors[Number(book.id) % bookColors.length];
     const sessions: StudySession[] = [];
     const pagesPerDay = Math.ceil(book.totalPages / book.duration);
+
     for (let day = 0; day < book.duration; day++) {
       const sessionDate = new Date(book.startDate);
       sessionDate.setDate(sessionDate.getDate() + day);
@@ -91,11 +133,18 @@ export function Schedule() {
         },
         date: sessionDate.toISOString().split('T')[0],
         hijriDate: '',
-        color: book.color
+        // color: book.color
+        color: color
       });
     }
     return sessions;
   };
+
+  const bookColors: string[] = [
+    '#FF6B6B', '#6BCB77', '#F9F871', '#4D96FF', '#FFD93D', '#845EC2',
+    '#00C9A7', '#FF9671', '#FFC75F', '#B39CD0'
+  ];
+
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -119,9 +168,19 @@ export function Schedule() {
         console.log('Updating existing block:', { blockId, newDate: targetDate });
         await updateBlock(blockId, targetDate);
       }
-
-      // 🔄 Refresh schedule after either action
       const updated = await getSchedule();
+      const colorMap: Record<number, string> = {};
+
+      let colorIndex = 0;
+
+      updated.forEach((block: ScheduledBlock) => {
+        if (!colorMap[block.book]) {
+          colorMap[block.book] = bookColors[colorIndex % bookColors.length];
+          colorIndex++;
+        }
+      });
+
+
       const blocks = updated.map(block => ({
         id: `session-${block.id}`,
         bookId: block.book,
@@ -132,7 +191,7 @@ export function Schedule() {
           start: block.page_start,
           end: block.page_end
         },
-        color: '#FF6B6B'
+        color: colorMap[block.book]
       }));
       console.log('Updated schedule:', blocks);
       setStudySessions(blocks);
@@ -140,45 +199,6 @@ export function Schedule() {
       console.error('Failed to handle drag end:', err);
     }
   };
-
-  // const handleDragEnd = async (event: DragEndEvent) => {
-  //   const { active, over } = event;
-  //   if (!over || active.id === over.id) return;
-
-  //   const bookData = active.data.current?.book as Book;
-  //   const targetDate = over.data.current?.date as string;
-  //   console.log('Dragged:', active.data.current?.book);
-  //   console.log('Dropped on:', over?.data.current?.date);
-
-
-  //   if (bookData && targetDate) {
-  //     try {
-  //       console.log('Sending POST request with:', {
-  //         bookId: bookData.id,
-  //         date: targetDate
-  //       });
-  //       await scheduleBook(bookData.id, targetDate);
-  //       const updated = await getSchedule();
-  //       // console.log('Updated schedule:', updated);
-  //       const blocks = updated.map(block => ({
-  //         id: `session-${block.id}`,
-  //         bookId: block.book,
-  //         bookTitle: block.book_title || 'Untitled',
-  //         date: block.date_gregorian,
-  //         hijriDate: block.date_hijri,
-  //         pageRange: {
-  //           start: block.page_start,
-  //           end: block.page_end
-  //         },
-  //         color: '#FF6B6B'
-  //       }));
-  //     console.log('Updated schedule:', blocks);
-  //       setStudySessions(blocks);
-  //     } catch (err) {
-  //       console.error('Failed to schedule book:', err);
-  //     }
-  //   }
-  // };
 
   const handlePrevMonth = () => {
     setCurrentMonth(prev =>
@@ -214,7 +234,7 @@ export function Schedule() {
   const monthName = format(new Date(currentMonth.year, currentMonth.month - 1), 'MMMM');
 
   return (
-    <div className="w-full min-h-screen bg-gray-950 flex flex-col">
+    <div className="w-full h-screen overflow-hidden bg-gray-950 flex flex-col">
       <Navbar />
       <div className="flex-1 flex overflow-hidden">
         <DndContext
@@ -232,7 +252,20 @@ export function Schedule() {
 
         // onDragEnd={handleDragEnd}
         >
-          <BookSidebar books={books} onAddBook={handleAddBook} />
+          <div
+            className="flex gap-4"
+            style={{
+              transform: 'scale(0.85)',
+              transformOrigin: 'top left',
+              // width: '133.33%'
+              height: '133.33%'  // optional, if height matters
+
+            }}
+          >
+            <BookSidebar books={books} onAddBook={handleAddBook} />
+          </div>
+
+
           {/* <DndKitDevTools /> */}
           <DragOverlay>
             {draggedBook ? (
@@ -268,9 +301,30 @@ export function Schedule() {
                   Export PDF
                 </button>
               </div>
-              <div id="calendar-container" className="bg-gray-900 rounded-lg p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">Your Calendar</h2>
+                <button
+                  onClick={handleClearMySchedule}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
+                  title="Clear all your scheduled blocks"
+                >
+                  🧹 Clear All
+                </button>
+              </div>
+              <div
+                id="calendar-container"
+                className="bg-gray-900 rounded-lg p-6"
+                style={{
+                  transform: 'scale(0.85)',
+                  transformOrigin: 'top left',
+                  width: '115.33%', // 100 / 0.75
+                  height: '133.33%'  // optional, if height matters
+                }}
+              >
                 <Calendar days={calendarDays} schedule={studySessions} books={books} />
               </div>
+
+
             </div>
           </div>
 

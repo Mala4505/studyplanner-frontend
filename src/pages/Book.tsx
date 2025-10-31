@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 
 export function Book() {
@@ -17,7 +16,7 @@ export function Book() {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
-      navigate('/login');
+      navigate('/login', { replace: true });
     }
   }, []);
 

@@ -24,6 +24,7 @@ export function DateCell({
 
   const hijriDate = gregorianToHijri(date);
   const isToday = format(new Date(), 'yyyy-MM-dd') === dateString;
+  
 
   return (
     <div
