@@ -1,25 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
-import { Book } from '../types';
+import { Book, ScheduledBlock } from '../types';
 import { BookBlock } from './BookBlock';
 import { useDraggable } from '@dnd-kit/core';
-import 'react-datepicker/dist/react-datepicker.css';
-import * as ReactDatePicker from 'react-datepicker';
 import { toast } from 'react-toastify';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { format } from 'date-fns';
+import { getSchedule } from '../api/schedule';
 
 interface BookSidebarProps {
   books: Book[];
   onAddBook: (book: Book) => void;
+  onScheduleChange?: () => void;
 }
 
 function DraggableBook({
   book,
-  onStartFromDate
+  isScheduling,
+  startDate,
+  onScheduleClick,
+  onDateChange,
+  onConfirmSchedule,
+  onCancelSchedule,
+  onDeleteSchedule
 }: {
   book: Book;
-  onStartFromDate: (book: Book) => void;
+  isScheduling: boolean;
+  startDate: Date | null;
+  onScheduleClick: () => void;
+  onDateChange: (date: Date | null) => void;
+  onConfirmSchedule: () => void;
+  onCancelSchedule: () => void;
+  onDeleteSchedule: (book: Book) => void;
 }) {
-  const { attributes, listeners, setNodeRef } = useDraggable({
+  const { setNodeRef } = useDraggable({
     id: book.id,
     data: { book },
   });
@@ -27,31 +43,60 @@ function DraggableBook({
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className="bg-gray-800 rounded-lg p-3 cursor-move select-none hover:bg-gray-700 transition-colors z-50"
+      className="group bg-gray-800 rounded-lg p-3 select-none hover:bg-gray-700 transition-colors relative"
     >
-      <div className="pointer-events-none">
-        <BookBlock book={book} isDraggable={true} />
-        <div className="mt-2 text-xs text-gray-400">
-          <div>Pages: {book.pageFrom} - {book.pageTo} ({book.totalPages} pages)</div>
-          <div>Duration: {book.duration} days</div>
-        </div>
+      <BookBlock
+        book={book}
+        isDraggable={true}
+        onSchedule={() => {
+          console.log('Schedule clicked for', book.title);
+          onScheduleClick(); // ✅ fixed missing call
+        }}
+        onDelete={() => onDeleteSchedule(book)}
+      />
+      <div className="mt-2 text-xs text-gray-400">
+        <div>Pages: {book.pageFrom} - {book.pageTo} ({book.totalPages} pages)</div>
+        <div>Duration: {book.duration} days</div>
       </div>
-      <button
-        onClick={() => onStartFromDate(book)}
-        className="mt-2 text-xs text-blue-400 hover:text-blue-600 pointer-events-auto"
-      >
-        📅 Start from date
-      </button>
+
+      {isScheduling && (
+        <div className="mt-2 bg-gray-800 p-3 rounded-lg border border-gray-700">
+          <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <DatePicker
+              label="Start Date"
+              value={startDate}
+              onChange={onDateChange}
+              disablePast
+              openTo="day" // ✅ This forces it to open with day selection
+              // views={['day', 'month', 'year']}
+            />
+          </LocalizationProvider>
+          <div className="mt-2 flex gap-2 justify-end">
+            <button
+              onClick={onConfirmSchedule}
+              className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              ✅
+            </button>
+            <button
+              onClick={onCancelSchedule}
+              className="px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600"
+            >
+              ❌
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export function BookSidebar({ books }: BookSidebarProps) {
+export function BookSidebar({ books, onAddBook, onScheduleChange }: BookSidebarProps) {
   const [search, setSearch] = useState('');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [startDate, setStartDate] = useState<Date | null>(new Date());
+  const [scheduleBookId, setScheduleBookId] = useState<string | null>(null);
+  const [scheduledBlocks, setScheduledBlocks] = useState<ScheduledBlock[]>([]);
 
   const filteredBooks = books.filter(book =>
     book.title.toLowerCase().includes(search.toLowerCase())
@@ -61,7 +106,7 @@ export function BookSidebar({ books }: BookSidebarProps) {
     if (!selectedBook || !startDate) return;
 
     try {
-      const res = await fetch('http://localhost:8000/api/schedule/book/', {
+      const res = await fetch('http://localhost:8000/schedule/book/', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${localStorage.getItem('token')}`,
@@ -69,18 +114,55 @@ export function BookSidebar({ books }: BookSidebarProps) {
         },
         body: JSON.stringify({
           book_id: selectedBook.id,
-          start_date: startDate.toISOString().split('T')[0]
+          start_date: format(startDate, 'yyyy-MM-dd')
         })
       });
 
       if (!res.ok) throw new Error('Failed to schedule book');
-      toast.success(`Scheduled "${selectedBook.title}" from ${startDate.toDateString()}`);
+      toast.success(`Scheduled "${selectedBook.title}" from ${format(startDate, 'dd-MM-yyyy')}`);
       setSelectedBook(null);
+      setScheduleBookId(null);
+      onScheduleChange?.();
     } catch (err) {
       console.error(err);
       toast.error('Error scheduling book');
     }
   };
+
+  const handleDeleteSchedule = async (book: Book) => {
+    const confirmed = window.confirm(`Remove schedule for "${book.title}"?`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`http://localhost:8000/schedule/book/${book.id}/delete/`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!res.ok) throw new Error('Failed to delete schedule');
+      toast.success(`Removed all blocks for "${book.title}"`);
+      onScheduleChange?.();
+    } catch (err) {
+      console.error(err);
+      toast.error('Error removing schedule');
+    }
+  };
+
+  const refreshSchedule = async () => {
+    try {
+      const blocks = await getSchedule();
+      setScheduledBlocks(blocks);
+    } catch (err) {
+      console.error('Failed to refresh schedule', err);
+    }
+  };
+
+  useEffect(() => {
+    refreshSchedule();
+  }, []);
 
   return (
     <div
@@ -102,43 +184,31 @@ export function BookSidebar({ books }: BookSidebarProps) {
           className="w-full pl-10 pr-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-blue-600"
         />
       </div>
-      <div className="flex-1 overflow-y-auto space-y-3">
+      <div className="flex-1 overflow-y-auto space-y-2">
         {filteredBooks.length === 0 ? (
           <p className="text-gray-500 text-sm text-center mt-8">No books found</p>
         ) : (
           filteredBooks.map(book => (
-            <DraggableBook key={book.id} book={book} onStartFromDate={setSelectedBook} />
+            <DraggableBook
+              key={book.id}
+              book={book}
+              isScheduling={scheduleBookId === book.id}
+              startDate={startDate}
+              onScheduleClick={() => {
+                setScheduleBookId(book.id);
+                setSelectedBook(book);
+              }}
+              onDateChange={setStartDate}
+              onConfirmSchedule={handleScheduleFromDate}
+              onCancelSchedule={() => {
+                setScheduleBookId(null);
+                setSelectedBook(null);
+              }}
+              onDeleteSchedule={handleDeleteSchedule}
+            />
           ))
         )}
       </div>
-
-      {selectedBook && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-gray-900 p-6 rounded-lg border border-gray-700">
-            <h3 className="text-white mb-4">Schedule "{selectedBook.title}" from:</h3>
-            <ReactDatePicker.default
-              selected={startDate}
-              onChange={(date: Date) => setStartDate(date)}
-              className="px-4 py-2 rounded bg-gray-800 text-white"
-            />
-
-            <div className="mt-4 flex gap-4">
-              <button
-                onClick={handleScheduleFromDate}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Confirm
-              </button>
-              <button
-                onClick={() => setSelectedBook(null)}
-                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

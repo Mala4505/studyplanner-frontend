@@ -43,39 +43,44 @@ export function Schedule() {
   );
 
 
+  // useEffect(() => {
+  //   getBooks().then(setBooks).catch(err => console.error('Failed to fetch books:', err));
+
+  //   getSchedule()
+  //     .then(res => {
+  //       // ✅ Assign colors per book
+  //       const colorMap: Record<number, string> = {};
+  //       let colorIndex = 0;
+
+  //       res.forEach((block: ScheduledBlock) => {
+  //         if (!colorMap[block.book]) {
+  //           colorMap[block.book] = bookColors[colorIndex % bookColors.length];
+  //           colorIndex++;
+  //         }
+  //       });
+
+  //       const blocks = res.map(block => ({
+  //         id: `session-${block.id}`,
+  //         bookId: block.book,
+  //         bookTitle: block.book_title || 'Untitled',
+  //         date: block.date_gregorian,
+  //         hijriDate: block.date_hijri,
+  //         pageRange: {
+  //           start: block.page_start,
+  //           end: block.page_end
+  //         },
+  //         color: colorMap[block.book] // ✅ Now this works on refresh
+  //       }));
+
+  //       setStudySessions(blocks);
+  //     })
+  //     .catch(err => console.error('Failed to fetch schedule:', err));
+  // }, []);
+
   useEffect(() => {
-    getBooks().then(setBooks).catch(err => console.error('Failed to fetch books:', err));
-
-    getSchedule()
-      .then(res => {
-        // ✅ Assign colors per book
-        const colorMap: Record<number, string> = {};
-        let colorIndex = 0;
-
-        res.forEach((block: ScheduledBlock) => {
-          if (!colorMap[block.book]) {
-            colorMap[block.book] = bookColors[colorIndex % bookColors.length];
-            colorIndex++;
-          }
-        });
-
-        const blocks = res.map(block => ({
-          id: `session-${block.id}`,
-          bookId: block.book,
-          bookTitle: block.book_title || 'Untitled',
-          date: block.date_gregorian,
-          hijriDate: block.date_hijri,
-          pageRange: {
-            start: block.page_start,
-            end: block.page_end
-          },
-          color: colorMap[block.book] // ✅ Now this works on refresh
-        }));
-
-        setStudySessions(blocks);
-      })
-      .catch(err => console.error('Failed to fetch schedule:', err));
-  }, []);
+  getBooks().then(setBooks).catch(err => console.error('Failed to fetch books:', err));
+  refreshSchedule(); // ✅ use shared function
+}, []);
 
 
   useEffect(() => {
@@ -231,6 +236,40 @@ export function Schedule() {
     }
   };
 
+  const refreshSchedule = async () => {
+  try {
+    const updated = await getSchedule();
+    const colorMap: Record<number, string> = {};
+    let colorIndex = 0;
+
+    updated.forEach((block: ScheduledBlock) => {
+      if (!colorMap[block.book]) {
+        colorMap[block.book] = bookColors[colorIndex % bookColors.length];
+        colorIndex++;
+      }
+    });
+
+    const blocks = updated.map(block => ({
+      id: `session-${block.id}`,
+      bookId: block.book,
+      bookTitle: block.book_title || 'Untitled',
+      date: block.date_gregorian,
+      hijriDate: block.date_hijri,
+      pageRange: {
+        start: block.page_start,
+        end: block.page_end
+      },
+      color: colorMap[block.book]
+    }));
+
+    console.log('Updated schedule:', blocks);
+    setStudySessions(blocks);
+  } catch (err) {
+    console.error('Failed to refresh schedule:', err);
+  }
+};
+
+
   const monthName = format(new Date(currentMonth.year, currentMonth.month - 1), 'MMMM');
 
   return (
@@ -262,7 +301,7 @@ export function Schedule() {
 
             }}
           >
-            <BookSidebar books={books} onAddBook={handleAddBook} />
+            <BookSidebar books={books} onAddBook={handleAddBook} onScheduleChange={refreshSchedule} />
           </div>
 
 
