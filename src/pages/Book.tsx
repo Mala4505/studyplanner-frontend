@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Navbar } from '../components/Navbar';
+import { PageHeader } from '../components/PageHeader';
 import { useEffect } from 'react';
 
 
@@ -61,11 +61,14 @@ export function Book() {
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-950 flex flex-col">
-      <Navbar />
+    // <div className="w-full min-h-screen bg-gray-950 flex flex-col">
+    <div>
+      {/* <Navbar /> */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-2xl bg-gray-900 rounded-lg p-8 border border-gray-800">
-          <h2 className="text-2xl font-bold text-white mb-6">Add New Book</h2>
+          <PageHeader title="Books" />
+          
+          {/* <h2 className="text-2xl font-bold text-white mb-6">Add New Book</h2> */}
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">Book Title</label>

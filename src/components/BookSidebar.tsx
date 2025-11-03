@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
-import { Book, ScheduledBlock } from '../types';
+import { Book, ScheduledBlock, Tag } from '../types';
 import { BookBlock } from './BookBlock';
 import { useDraggable } from '@dnd-kit/core';
 import { toast } from 'react-toastify';
@@ -8,7 +8,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format } from 'date-fns';
-import { getSchedule } from '../api/schedule';
+import { getSchedule, getTags, updateBook } from '../api/schedule';
 
 interface BookSidebarProps {
   books: Book[];
@@ -24,7 +24,9 @@ function DraggableBook({
   onDateChange,
   onConfirmSchedule,
   onCancelSchedule,
-  onDeleteSchedule
+  onDeleteSchedule,
+  tags,
+  onScheduleChange
 }: {
   book: Book;
   isScheduling: boolean;
@@ -34,11 +36,15 @@ function DraggableBook({
   onConfirmSchedule: () => void;
   onCancelSchedule: () => void;
   onDeleteSchedule: (book: Book) => void;
+  tags: Tag[];
+  onScheduleChange?: () => void;
 }) {
   const { setNodeRef } = useDraggable({
     id: book.id,
     data: { book },
   });
+
+  const bookTags = tags.filter(tag => !tag.is_block_only); // ✅ filter out block-only tags
 
   return (
     <div
@@ -48,15 +54,38 @@ function DraggableBook({
       <BookBlock
         book={book}
         isDraggable={true}
-        onSchedule={() => {
-          console.log('Schedule clicked for', book.title);
-          onScheduleClick(); // ✅ fixed missing call
-        }}
+        onSchedule={onScheduleClick}
         onDelete={() => onDeleteSchedule(book)}
       />
+
       <div className="mt-2 text-xs text-gray-400">
         <div>Pages: {book.pageFrom} - {book.pageTo} ({book.totalPages} pages)</div>
         <div>Duration: {book.duration} days</div>
+      </div>
+
+      <div className="mt-2 flex items-center justify-between">
+        {book.tag && (
+          <span className="px-2 py-1 text-xs rounded-full bg-gray-700 text-white">
+            {book.tag.icon} {book.tag.name}
+          </span>
+        )}
+        <select
+          className="bg-gray-800 text-white text-xs border border-gray-600 rounded px-2 py-1"
+          value={book.tag?.id || ''}
+          onChange={async (e) => {
+            const tagId = Number(e.target.value);
+            await updateBook(book.id, { tag_id: tagId });
+            toast.success(`Tag updated for "${book.title}"`);
+            onScheduleChange?.();
+          }}
+        >
+          <option value="">No Tag</option>
+          {bookTags.map(tag => (
+            <option key={tag.id} value={tag.id}>
+              {tag.icon} {tag.name}
+            </option>
+          ))}
+        </select>
       </div>
 
       {isScheduling && (
@@ -67,8 +96,7 @@ function DraggableBook({
               value={startDate}
               onChange={onDateChange}
               disablePast
-              openTo="day" // ✅ This forces it to open with day selection
-              // views={['day', 'month', 'year']}
+              openTo="day"
             />
           </LocalizationProvider>
           <div className="mt-2 flex gap-2 justify-end">
@@ -95,8 +123,9 @@ export function BookSidebar({ books, onAddBook, onScheduleChange }: BookSidebarP
   const [search, setSearch] = useState('');
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [startDate, setStartDate] = useState<Date | null>(new Date());
-  const [scheduleBookId, setScheduleBookId] = useState<string | null>(null);
+  const [scheduleBookId, setScheduleBookId] = useState<number | null>(null);
   const [scheduledBlocks, setScheduledBlocks] = useState<ScheduledBlock[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
 
   const filteredBooks = books.filter(book =>
     book.title.toLowerCase().includes(search.toLowerCase())
@@ -162,6 +191,7 @@ export function BookSidebar({ books, onAddBook, onScheduleChange }: BookSidebarP
 
   useEffect(() => {
     refreshSchedule();
+    getTags().then(setTags);
   }, []);
 
   return (
@@ -170,7 +200,8 @@ export function BookSidebar({ books, onAddBook, onScheduleChange }: BookSidebarP
       style={{
         transform: 'scale(0.75)',
         transformOrigin: 'top left',
-        width: '133.33%'
+        width: '133.33%',
+        // height: '133.33%'
       }}
     >
       <h2 className="text-lg font-bold text-white mb-4">My Books</h2>
@@ -205,6 +236,8 @@ export function BookSidebar({ books, onAddBook, onScheduleChange }: BookSidebarP
                 setSelectedBook(null);
               }}
               onDeleteSchedule={handleDeleteSchedule}
+              tags={tags}
+              onScheduleChange={onScheduleChange}
             />
           ))
         )}

@@ -30,7 +30,7 @@ export function getCurrentUser(): User | null {
   // You can decode token for username if needed
   const payload = JSON.parse(atob(token.split('.')[1]));
   return {
-    trNumber: payload.tr_number,
+    tr_number: payload.tr_number,
     role: role as 'student' | 'admin'
   };
 }

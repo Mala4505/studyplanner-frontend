@@ -28,7 +28,7 @@ export function Navbar() {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-gray-300 font-medium">{user?.trNumber}</span>
+          <span className="text-gray-300 font-medium">{user?.tr_number}</span>
           <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
             <LogOut size={18} />
             Logout

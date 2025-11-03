@@ -1,37 +1,58 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DndContext, DragEndEvent, closestCenter, DragOverlay } from '@dnd-kit/core';
-// import { DndKitDevTools } from '@dnd-kit/devtools';
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
-import { Navbar } from '../components/Navbar';
+import {
+  DndContext,
+  DragEndEvent,
+  closestCenter,
+  DragOverlay
+} from '@dnd-kit/core';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download
+} from 'lucide-react';
+import { PageHeader } from '../components/PageHeader';
 import { BookSidebar } from '../components/BookSidebar';
 import { Calendar } from '../components/Calendar';
-import { getBooks, getSchedule, scheduleBook, updateBlock } from '../api/schedule';
+import {
+  getBooks,
+  getSchedule,
+  scheduleBook,
+  updateBlock,
+  getTags
+} from '../api/schedule';
 import { getMonthCalendar } from '../utils/hijriCalendar';
-import { Book, CalendarDay, StudySession, ScheduledBlock } from '../types';
-import { getCurrentUser } from '../utils/auth';
+import {
+  Book,
+  CalendarDay,
+  ScheduledBlock,
+  Tag
+} from '../types';
 import jsPDF from 'jspdf';
 import { toCanvas } from 'html-to-image';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
+import { BASE } from '../api/schedule';
+import { tagColorMap } from '../constants';
 
 export function Schedule() {
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login', { replace: true });
-    }
-  }, []);
   const [books, setBooks] = useState<Book[]>([]);
-  const [studySessions, setStudySessions] = useState<StudySession[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  const [studySessions, setStudySessions] = useState<ScheduledBlock[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const today = new Date();
     return { year: today.getFullYear(), month: today.getMonth() + 1 };
   });
-  const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
   const [draggedBook, setDraggedBook] = useState<Book | null>(null);
+  const [calendarDays, setCalendarDays] = useState<CalendarDay[]>([]);
+  const [loadingCalendar, setLoadingCalendar] = useState<boolean>(true);
+
+  const bookColors: string[] = [
+    '#FF6B6B', '#6BCB77', '#F9F871', '#4D96FF', '#FFD93D', '#845EC2',
+    '#00C9A7', '#FF9671', '#FFC75F', '#B39CD0'
+  ];
 
   const hijriMonthsInView = Array.from(
     new Set(
@@ -42,168 +63,133 @@ export function Schedule() {
     )
   );
 
-
-  // useEffect(() => {
-  //   getBooks().then(setBooks).catch(err => console.error('Failed to fetch books:', err));
-
-  //   getSchedule()
-  //     .then(res => {
-  //       // ✅ Assign colors per book
-  //       const colorMap: Record<number, string> = {};
-  //       let colorIndex = 0;
-
-  //       res.forEach((block: ScheduledBlock) => {
-  //         if (!colorMap[block.book]) {
-  //           colorMap[block.book] = bookColors[colorIndex % bookColors.length];
-  //           colorIndex++;
-  //         }
-  //       });
-
-  //       const blocks = res.map(block => ({
-  //         id: `session-${block.id}`,
-  //         bookId: block.book,
-  //         bookTitle: block.book_title || 'Untitled',
-  //         date: block.date_gregorian,
-  //         hijriDate: block.date_hijri,
-  //         pageRange: {
-  //           start: block.page_start,
-  //           end: block.page_end
-  //         },
-  //         color: colorMap[block.book] // ✅ Now this works on refresh
-  //       }));
-
-  //       setStudySessions(blocks);
-  //     })
-  //     .catch(err => console.error('Failed to fetch schedule:', err));
-  // }, []);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login', { replace: true });
+    }
+  }, []);
 
   useEffect(() => {
-  getBooks().then(setBooks).catch(err => console.error('Failed to fetch books:', err));
-  refreshSchedule(); // ✅ use shared function
-}, []);
+    const loadInitialData = async () => {
+      try {
+        const [booksData, tagsData] = await Promise.all([getBooks(), getTags()]);
+        setBooks(booksData);
+        setTags(tagsData);
+        await refreshSchedule(tagsData);
+      } catch (err) {
+        console.error('Failed to load initial data:', err);
+        toast.error('Error loading initial data');
+      }
+    };
 
+    loadInitialData();
+  }, []);
 
   useEffect(() => {
-    const days = getMonthCalendar(currentMonth.year, currentMonth.month);
-    setCalendarDays(days);
-  }, [currentMonth]);
+    const loadCalendar = async () => {
+      setLoadingCalendar(true);
+      const minimalBlocks = studySessions.map(({ date_gregorian, date_hijri }) => ({
+        date_gregorian,
+        date_hijri: date_hijri ?? undefined
+      }));
 
-  const user = getCurrentUser();
+      try {
+        const days = await getMonthCalendar(currentMonth.year, currentMonth.month, minimalBlocks);
+        setCalendarDays(days);
+      } catch (err) {
+        console.error('Failed to load calendar:', err);
+        toast.error('Error loading calendar');
+      } finally {
+        setLoadingCalendar(false);
+      }
+    };
 
-  const handleClearMySchedule = async () => {
+    loadCalendar();
+  }, [currentMonth, studySessions]);
 
-    if (!confirm('This will remove all your scheduled blocks. Continue?')) return;
-
+  const refreshSchedule = async (tagList: Tag[] = tags) => {
+    setLoadingCalendar(true);
     try {
-      const res = await fetch('http://localhost:8000/schedule/clear/', {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        }
+      const updated = await getSchedule();
+      const tagMap = new Map(tagList.map(t => [t.id, t]));
+
+      const hydrated = updated.map(block => {
+        const tagId =
+          typeof block.tag === 'number' ? block.tag :
+            block.tag?.id ?? block.bookTag?.id;
+
+        const fullTag = typeof tagId === 'number' ? tagMap.get(tagId) : undefined;
+        const color = fullTag?.name ? tagColorMap[fullTag.name] : bookColors[block.book % bookColors.length];
+
+        return {
+          ...block,
+          id: `session-${block.id}`,
+          tag: fullTag ?? block.tag ?? block.bookTag,
+          color,
+          date_hijri: block.date_hijri
+        };
       });
 
-      const data = await res.json();
-      setStudySessions([]); // or call fetchStudySessions()
-      toast.success(data.message || 'Your schedule has been cleared');
+      setStudySessions(hydrated);
     } catch (err) {
-      console.error('Failed to clear schedule:', err);
-      toast.error('Error clearing your schedule');
+      console.error('Failed to refresh schedule:', err);
+      toast.error('Error refreshing schedule');
+    } finally {
+      setLoadingCalendar(false);
     }
   };
 
-  const handleAddBook = (book: Book) => {
-    setBooks(prev => [...prev, book]);
-    const sessions = generateStudySessions(book);
-    setStudySessions(prev => [...prev, ...sessions]);
-  };
+  const refreshAll = async () => {
+    try {
+      const [bookList, scheduleList] = await Promise.all([getBooks(), getSchedule()]);
+      setBooks(bookList);
 
-  const generateStudySessions = (book: Book): StudySession[] => {
-    const color = book.color || bookColors[Number(book.id) % bookColors.length];
-    const sessions: StudySession[] = [];
-    const pagesPerDay = Math.ceil(book.totalPages / book.duration);
+      const colorMap: Record<number, string> = {};
+      let colorIndex = 0;
 
-    for (let day = 0; day < book.duration; day++) {
-      const sessionDate = new Date(book.startDate);
-      sessionDate.setDate(sessionDate.getDate() + day);
-      const startPage = day * pagesPerDay + 1;
-      const endPage = Math.min((day + 1) * pagesPerDay, book.totalPages);
-      sessions.push({
-        id: `${book.id}-session-${day}`,
-        bookId: book.id,
-        bookTitle: book.title,
-        pageRange: {
-          start: startPage,
-          end: endPage
-        },
-        date: sessionDate.toISOString().split('T')[0],
-        hijriDate: '',
-        // color: book.color
-        color: color
+      const blocks = scheduleList.map(block => {
+        if (!colorMap[block.book]) {
+          colorMap[block.book] = bookColors[colorIndex % bookColors.length];
+          colorIndex++;
+        }
+        const tag = block.tag || block.bookTag;
+        const color = tag?.name ? tagColorMap[tag.name] : colorMap[block.book];
+        return {
+          ...block,
+          id: `session-${block.id}`,
+          color,
+        };
       });
+
+      setStudySessions(blocks);
+    } catch (err) {
+      console.error('Failed to refresh data:', err);
     }
-    return sessions;
   };
-
-  const bookColors: string[] = [
-    '#FF6B6B', '#6BCB77', '#F9F871', '#4D96FF', '#FFD93D', '#845EC2',
-    '#00C9A7', '#FF9671', '#FFC75F', '#B39CD0'
-  ];
-
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
     const bookData = active.data.current?.book as Book;
-    const sessionData = active.data.current?.session as StudySession;
+    const sessionData = active.data.current?.session as ScheduledBlock;
     const targetDate = over.data.current?.date as string;
-
-    console.log('Dragged:', bookData || sessionData);
-    console.log('Dropped on:', targetDate);
 
     try {
       if (bookData && !sessionData && targetDate) {
-        // 🟢 Dragged from sidebar — schedule new blocks
-        console.log('Scheduling new book:', { bookId: bookData.id, date: targetDate });
         await scheduleBook(bookData.id, targetDate);
       } else if (sessionData && targetDate) {
-        // 🟡 Dragged an existing block — update its date
         const blockId = sessionData.id.replace('session-', '');
-        console.log('Updating existing block:', { blockId, newDate: targetDate });
         await updateBlock(blockId, targetDate);
       }
-      const updated = await getSchedule();
-      const colorMap: Record<number, string> = {};
-
-      let colorIndex = 0;
-
-      updated.forEach((block: ScheduledBlock) => {
-        if (!colorMap[block.book]) {
-          colorMap[block.book] = bookColors[colorIndex % bookColors.length];
-          colorIndex++;
-        }
-      });
-
-
-      const blocks = updated.map(block => ({
-        id: `session-${block.id}`,
-        bookId: block.book,
-        bookTitle: block.book_title || 'Untitled',
-        date: block.date_gregorian,
-        hijriDate: block.date_hijri,
-        pageRange: {
-          start: block.page_start,
-          end: block.page_end
-        },
-        color: colorMap[block.book]
-      }));
-      console.log('Updated schedule:', blocks);
-      setStudySessions(blocks);
+      await refreshSchedule();
     } catch (err) {
       console.error('Failed to handle drag end:', err);
+      toast.error('Error updating schedule');
     }
   };
+
 
   const handlePrevMonth = () => {
     setCurrentMonth(prev =>
@@ -236,78 +222,69 @@ export function Schedule() {
     }
   };
 
-  const refreshSchedule = async () => {
-  try {
-    const updated = await getSchedule();
-    const colorMap: Record<number, string> = {};
-    let colorIndex = 0;
-
-    updated.forEach((block: ScheduledBlock) => {
-      if (!colorMap[block.book]) {
-        colorMap[block.book] = bookColors[colorIndex % bookColors.length];
-        colorIndex++;
-      }
-    });
-
-    const blocks = updated.map(block => ({
-      id: `session-${block.id}`,
-      bookId: block.book,
-      bookTitle: block.book_title || 'Untitled',
-      date: block.date_gregorian,
-      hijriDate: block.date_hijri,
-      pageRange: {
-        start: block.page_start,
-        end: block.page_end
-      },
-      color: colorMap[block.book]
-    }));
-
-    console.log('Updated schedule:', blocks);
-    setStudySessions(blocks);
-  } catch (err) {
-    console.error('Failed to refresh schedule:', err);
-  }
-};
-
+  const handleClearMySchedule = async () => {
+    if (!confirm('This will remove all your scheduled blocks. Continue?')) return;
+    try {
+      const res = await fetch(`${BASE}/schedule/clear/`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        }
+      });
+      const data = await res.json();
+      setStudySessions([]);
+      toast.success(data.message || 'Your schedule has been cleared');
+    } catch (err) {
+      console.error('Failed to clear schedule:', err);
+      toast.error('Error clearing your schedule');
+    }
+  };
 
   const monthName = format(new Date(currentMonth.year, currentMonth.month - 1), 'MMMM');
 
+  const visibleSessions = selectedTags.length === 0
+    ? studySessions
+    : studySessions.filter(session => {
+      const tag = session.tag || session.bookTag;
+      return tag && selectedTags.includes(tag.name);
+    });
+
   return (
-    <div className="w-full h-screen overflow-hidden bg-gray-950 flex flex-col">
-      <Navbar />
+    // <div className="w-full h-screen overflow-hidden bg-gray-950 flex flex-col relative">
+    <div>
+      {loadingCalendar && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-white border-opacity-50"></div>
+        </div>
+      )}
+
+      {/* <Navbar /> */}
       <div className="flex-1 flex overflow-hidden">
         <DndContext
           collisionDetection={closestCenter}
-          onDragStart={(event) => {
+          onDragStart={event => {
             const book = event.active.data.current?.book;
-            if (book) {
-              setDraggedBook(book);
-            }
+            if (book) setDraggedBook(book);
           }}
-          onDragEnd={(event) => {
+          onDragEnd={event => {
             setDraggedBook(null);
             handleDragEnd(event);
           }}
-
-        // onDragEnd={handleDragEnd}
         >
-          <div
-            className="flex gap-4"
-            style={{
-              transform: 'scale(0.85)',
-              transformOrigin: 'top left',
-              // width: '133.33%'
-              height: '133.33%'  // optional, if height matters
-
-            }}
-          >
-            <BookSidebar books={books} onAddBook={handleAddBook} onScheduleChange={refreshSchedule} />
+          <div className="flex gap-4" style={{ transform: 'scale(0.85)', transformOrigin: 'top left', height: '133.33%' }}>
+            <BookSidebar
+              books={books}
+              onAddBook={book => {
+                setBooks(prev => [...prev, book]);
+                refreshAll();
+              }}
+              onScheduleChange={refreshAll}
+            />
           </div>
 
-
-          {/* <DndKitDevTools /> */}
           <DragOverlay>
-            {draggedBook ? (
+            {draggedBook && (
               <div className="bg-gray-800 rounded-lg p-3 text-white shadow-lg w-64">
                 <div className="font-semibold">{draggedBook.title}</div>
                 <div className="text-xs text-gray-400">
@@ -315,8 +292,9 @@ export function Schedule() {
                 </div>
                 <div className="text-xs text-gray-400">Duration: {draggedBook.duration} days</div>
               </div>
-            ) : null}
+            )}
           </DragOverlay>
+
           <div className="flex-1 p-6 overflow-y-auto">
             <div className="max-w-7xl mx-auto">
               <div className="flex items-center justify-between mb-6">
@@ -326,11 +304,8 @@ export function Schedule() {
                   </button>
                   <h2 className="text-2xl font-bold text-white">
                     {monthName} {currentMonth.year}
-                    <span className="text-sm text-gray-300 ml-3">
-                      ({hijriMonthsInView.join(' | ')})
-                    </span>
+                    <span className="text-sm text-gray-300 ml-3">({hijriMonthsInView.join(' | ')})</span>
                   </h2>
-
                   <button onClick={handleNextMonth} className="p-2 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors">
                     <ChevronRight size={20} />
                   </button>
@@ -340,8 +315,11 @@ export function Schedule() {
                   Export PDF
                 </button>
               </div>
+
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-white">Your Calendar</h2>
+                <PageHeader title="Schedule" />
+
+                {/* <h2 className="text-xl font-bold text-white">Your Calendar</h2> */}
                 <button
                   onClick={handleClearMySchedule}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm"
@@ -350,23 +328,50 @@ export function Schedule() {
                   🧹 Clear All
                 </button>
               </div>
+
+              <div className="flex flex-wrap gap-2 mb-6">
+                {Object.keys(tagColorMap).map(tagName => {
+                  const isSelected = selectedTags.includes(tagName);
+                  return (
+                    <button
+                      key={tagName}
+                      onClick={() => {
+                        setSelectedTags(prev =>
+                          isSelected ? prev.filter(t => t !== tagName) : [...prev, tagName]
+                        );
+                      }}
+                      className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${isSelected ? 'bg-white text-black' : 'bg-gray-700 text-white'
+                        }`}
+                      style={{ border: `2px solid ${tagColorMap[tagName]}` }}
+                    >
+                      {tagName}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div
                 id="calendar-container"
                 className="bg-gray-900 rounded-lg p-6"
                 style={{
                   transform: 'scale(0.85)',
                   transformOrigin: 'top left',
-                  width: '115.33%', // 100 / 0.75
-                  height: '133.33%'  // optional, if height matters
+                  width: '115.33%',
+                  height: '133.33%',
                 }}
               >
-                <Calendar days={calendarDays} schedule={studySessions} books={books} />
+                <Calendar
+                  days={calendarDays}
+                  schedule={visibleSessions} // ✅ should be updated
+                  tags={tags}
+                  onRefresh={refreshSchedule}
+                  currentMonth={currentMonth}
+                  setCurrentMonth={setCurrentMonth}
+                  hijriMonthsInView={hijriMonthsInView}
+                />
               </div>
-
-
             </div>
           </div>
-
         </DndContext>
       </div>
     </div>

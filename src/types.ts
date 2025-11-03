@@ -1,35 +1,8 @@
 export interface User {
-  trNumber: string;
-  // password: string;
+  id: number;
+  tr_number: string;
   role: 'student' | 'admin';
-}
-export interface Book {
-  id: string;
-  title: string;
-  pageFrom: number;
-  pageTo: number;
-  duration: number;
-  totalPages: number;
-  startDate: Date;
-  color: string;
-}
-// export interface ScheduledBlock {
-//   id: string;
-//   book: string;
-//   date: string; // YYYY-MM-DD format
-//   pageFrom: number;
-//   pageTo: number;
-//   dayNumber: number; // Which day of the duration (1-based)
-// }
-export interface ScheduledBlock {
-  id: string;
-  book: number; // ✅ should be a number (book ID), not string
-  book_title: string; // ✅ needed for display
-  date_gregorian: string; // ✅ matches backend field
-  date_hijri?: string;
-  day_of_week?: string;
-  page_start: number;
-  page_end: number;
+  password?: string;
 }
 
 export interface HijriDate {
@@ -38,21 +11,47 @@ export interface HijriDate {
   day: number;
   monthName: string;
 }
+
 export interface CalendarDay {
   gregorianDate: Date;
-  hijriDate: HijriDate;
-  dayName: string;
+  hijriDate?: HijriDate | null;
+  // dayName: string;
   isCurrentMonth: boolean;
-  isPast: boolean;
+  // isPast: boolean;
 }
-// export interface Book {
-//   id: string;
-//   title: string;
-//   totalPages: number;
-//   duration: number;
-//   startDate: Date;
-//   color: string;
-// }
+
+export interface Tag {
+  id: number;
+  name: string;
+  color: string;
+  icon?: string;
+  category?: string;
+  is_block_only?: boolean;
+}
+
+export interface Book {
+  id: number;
+  title: string;
+  pageFrom: number;
+  pageTo: number;
+  totalPages: number;
+  duration: number;
+  tag?: Tag;
+}
+
+export interface ScheduledBlock {
+  id: string;
+  book: number;
+  book_title: string;
+  date_gregorian: string;
+  date_hijri?: HijriDate;
+  day_of_week?: string;
+  page_start: number;
+  page_end: number;
+  tag?: Tag;
+  bookTag?: Tag;
+  color?: string;
+}
 
 export interface StudySession {
   id: string;
@@ -65,10 +64,6 @@ export interface StudySession {
   date: string;
   hijriDate: string;
   color: string;
+  tag?: Tag;
+  bookTag?: Tag;
 }
-
-// export type CalendarDay = {
-//   date: string;
-//   hijriDate?: string;
-//   blocks: ScheduledBlock[];
-// };
